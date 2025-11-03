@@ -22,11 +22,11 @@ def generate_mermaid_from_prerequisites(json_path: str) -> str:
     if not edges:
         return "flowchart TD\n  A[No prerequisites found in data]"
 
-    # Optionally, add nodes with no prerequisites so they still show
+   
     topics_with_prereqs = {edge.split(" --> ")[1].strip('"') for edge in edges}
     root_topics = all_topics - topics_with_prereqs
     for root in root_topics:
-        edges.append(f'"{root}"')  # standalone node
+        edges.append(f'"{root}"')  
 
     diagram = "flowchart TD\n  " + "\n  ".join(edges)
     return diagram

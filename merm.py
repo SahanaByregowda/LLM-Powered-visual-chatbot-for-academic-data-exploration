@@ -10,17 +10,17 @@ from langchain.chains import RetrievalQA
 from langchain.docstore.document import Document
 import re # Import regex module for more aggressive cleaning
 
-# --- Import prompts from prompts.py ---
-from prompts import STYLE_PROMPT, FALLBACK
-# --- End prompt import ---
 
-# CONFIG & PATHS ---------------------------------------------------
+from prompts import STYLE_PROMPT, FALLBACK
+
+
+
 API_KEY = os.getenv("OPENAI_API_KEY")
 if not API_KEY:
     st.error("⚠️  Please set OPENAI_API_KEY in your environment.")
     st.stop()
 
-# Ensure these paths are correct for your system
+
 PDF_CE = "/Users/sahanabyregowda/Desktop/chatbot/ce_curriculum_full.md"
 HPC_FOLDER = "/Users/sahanabyregowda/Desktop/chatbot/scraped_hpc_data"
 
@@ -28,10 +28,10 @@ EMBED_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 PERSIST_CE  = "./chroma_ce_flow"
 PERSIST_HPC = "./chroma_hpc_flow"
 
-# LOAD / BUILD INDEXES ---------------------------------------------
+
 import json
 
-JSON_CE = "/path/to/enhanced_curriculum_with_nlp.json"  # update this path accordingly
+JSON_CE = "/path/to/enhanced_curriculum_with_nlp.json"  
 
 def _load_ce_docs() -> list[Document]:
     """Loads structured CE content from a JSON file."""
@@ -41,14 +41,14 @@ def _load_ce_docs() -> list[Document]:
         
         docs = []
 
-        # Convert structured topics to plain text chunks
+       
         for entry in json_data.get("curriculum", []):
             topic = entry.get("topic", "Untitled Topic")
             description = entry.get("description", "")
             prerequisites = ", ".join(entry.get("prerequisites", []))
             learning_outcomes = "\n- " + "\n- ".join(entry.get("learning_outcomes", [])) if entry.get("learning_outcomes") else ""
 
-            # Compose text content
+            
             content = f"## {topic}\n\n{description}\n\n**Prerequisites**: {prerequisites}\n\n**Learning Outcomes**:{learning_outcomes}"
             docs.append(Document(page_content=content, metadata={"source": JSON_CE}))
         
@@ -74,7 +74,7 @@ def _load_hpc_docs() -> list[Document]:
 
 embeddings = HuggingFaceEmbeddings(model_name=EMBED_MODEL)
 
-@st.cache_resource(show_spinner="🔧 Building CE vector store …")
+@st.cache_resource(show_spinner=" Building CE vector store …")
 def ce_retriever():
     """Builds and returns the CE vector store retriever."""
     ce_splitter = MarkdownTextSplitter(chunk_size=1000, chunk_overlap=200)
@@ -97,17 +97,16 @@ def hpc_retriever():
     for doc in hpc_raw_docs:
         chunks.extend(hpc_splitter.split_documents([doc]))
 
-    # --- DEBUG PRINT: Check total chunks generated ---
+    
     print(f"\nDEBUG: Total HPC chunks generated: {len(chunks)}\n")
-    # --- END DEBUG PRINT ---
-
+    
     vectordb = Chroma.from_documents(chunks, embeddings, persist_directory=PERSIST_HPC)
     return vectordb.as_retriever(search_kwargs={"k": 15})
 
 retriever_ce  = ce_retriever()
 retriever_hpc = hpc_retriever()
 
-# ROUTING LAYER ----------------------------------------------------
+
 HPC_KEYWORDS = {
     "hpc", "eumaster4hpc", "mobility", "summer school", "challenge", "workshop", "internship",
     "application", "apply", "admission", "procedure", "documents", "requirements",
@@ -128,14 +127,14 @@ def choose_retriever(q: str):
     
     return "CE", retriever_ce
 
-# STYLE_PROMPT and FALLBACK are imported from prompts.py now, not defined here.
 
-# STREAMLIT UI -----------------------------------------------------
+
+
 st.set_page_config(page_title="🎓 CE + HPC Flowchart Generator", layout="centered")
-st.title("📘 CE + HPC Flowchart Generator")
+st.title(" CE + HPC Flowchart Generator")
 st.markdown("Ask about the structure – I'll return a Mermaid flowchart.")
 
-query = st.text_input("📝 Your chart request", "Draw the mobility semester structure in the HPC program")
+query = st.text_input(" Your chart request", "Draw the mobility semester structure in the HPC program")
 show_chunks = st.checkbox("Show retrieved chunks (debug)")
 
 if query:
@@ -149,10 +148,10 @@ if query:
     chain = RetrievalQA.from_chain_type(llm=llm, retriever=retriever)
     prompt = STYLE_PROMPT.format(context=context_text, query=query)
 
-    with st.spinner("🤖 GPT-4 is generating your chart …"):
+    with st.spinner(" GPT-4 is generating your chart …"):
         answer = chain.run(prompt)
 
-    st.subheader("🧠 Generated Chart")
+    st.subheader(" Generated Chart")
     if "```mermaid" in answer:
         start_idx = answer.find("```mermaid")
         end_idx = answer.find("```", start_idx + len("```mermaid"))
@@ -160,12 +159,12 @@ if query:
         if start_idx != -1 and end_idx != -1:
             mermaid_raw = answer[start_idx + len("```mermaid"):end_idx]
             
-            # --- ULTRA-ROBUST CLEANING ---
+            
             mermaid = re.sub(r'[^\x00-\x7F]+', '', mermaid_raw)
             mermaid = re.sub(r'\s+', ' ', mermaid).strip()
             mermaid_lines = [line.strip() for line in mermaid.split('\n') if line.strip()]
             mermaid = '\n'.join(mermaid_lines)
-            # --- END ULTRA-ROBUST CLEANING ---
+            
 
             print("\n--- Cleaned Mermaid Code (repr for console debugging) ---")
             print(repr(mermaid))
@@ -205,8 +204,8 @@ if query:
         st.session_state.chat_history.append({"role": "assistant", "content": f"Failed to generate {retriever_name} flowchart for: {query}"})
 
     if show_chunks:
-        st.write(f"ℹ️ **Router selected:** `{domain}` knowledge-base")
-        st.write(f"ℹ️ **Number of chunks retrieved:** {len(docs)}")
+        st.write(f"**Router selected:** `{domain}` knowledge-base")
+        st.write(f"**Number of chunks retrieved:** {len(docs)}")
         for i, d in enumerate(docs, 1):
             source_info = d.metadata.get('source', 'Unknown')
             st.write(f"**Chunk {i} (from: {source_info}):**", d.page_content[:400] + " …")

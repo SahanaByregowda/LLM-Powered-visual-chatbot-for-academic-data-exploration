@@ -57,14 +57,12 @@ def extract_workload(workload_str):
 
     return contact_hours, independent_study
 
-# -------------------
-# Fallback Chart Function
-# -------------------
+
 def fallback_generate_chart_data(data):
     """Manual safe fallback if LLM code fails"""
     df = pd.DataFrame(data)
 
-    # Handle missing fields gracefully
+  
     if "Lecturers" not in df.columns and "Module Coordinator" not in df.columns:
         st.error("No 'Lecturers' or 'Module Coordinator' field found in JSON data.")
         return None
@@ -72,7 +70,7 @@ def fallback_generate_chart_data(data):
     df['Lecturers'] = df.get('Lecturers', '').fillna('').astype(str)
     df['Module Coordinator'] = df.get('Module Coordinator', '').fillna('').astype(str)
 
-    # Combine lecturers and module coordinators
+    
     df['All Professors'] = df['Lecturers'] + ', ' + df['Module Coordinator']
     df['All Professors'] = df['All Professors'].apply(lambda x: [name.strip() for name in x.split(',') if name.strip()])
     df = df.explode('All Professors')
@@ -90,10 +88,8 @@ def fallback_generate_chart_data(data):
     plt.tight_layout()
     return fig
 
-# -------------------
-# Vector Store Setup
-# -------------------
-@st.cache_resource(show_spinner="⏳ Loading curriculum data and building knowledge base...")
+
+@st.cache_resource(show_spinner=" Loading curriculum data and building knowledge base...")
 def setup_knowledge_base(uploaded_file):
     if uploaded_file is None:
         return None, None
@@ -111,10 +107,8 @@ def setup_knowledge_base(uploaded_file):
         st.error(f"Error processing uploaded file: {e}")
         return None, None
 
-# -------------------
-# LLM Setup
-# -------------------
-@st.cache_resource(show_spinner="🧠 Initializing LLM...")
+
+@st.cache_resource(show_spinner=" Initializing LLM...")
 def initialize_llm():
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
@@ -125,9 +119,7 @@ def initialize_llm():
 
 llm_openai = initialize_llm()
 
-# -------------------
-# Prompt Template
-# -------------------
+
 system_prompt_template = """
 You are a Python data analysis and visualization expert.
 Generate a `generate_chart_data(data)` function that returns a matplotlib figure.
@@ -139,9 +131,7 @@ chart_generation_prompt = ChatPromptTemplate.from_messages([
     ("human", "{question}")
 ])
 
-# -------------------
-# Main Streamlit Logic
-# -------------------
+
 uploaded_file = st.sidebar.file_uploader(
     "Upload your curriculum JSON file",
     type="json",

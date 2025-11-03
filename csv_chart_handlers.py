@@ -5,13 +5,13 @@ import re
 import traceback
 import plotly.graph_objects as go
 import seaborn as sns
-import openai # For OpenAI API calls
+import openai 
 from typing import Optional, List, Dict, Tuple
 
-# Import configurations and API key
+
 from config import CSV_FILE_NAME, API_KEY, MAX_RETRIES_CHART_GEN
 
-# Initialize OpenAI client lazily to avoid import-time errors
+
 client = None
 
 def get_openai_client():
@@ -26,7 +26,7 @@ def get_openai_client():
             print("Warning: OpenAI API key not found in csv_chart_handlers.py. Ensure it's set in main_app.py.")
     return client
 
-# --- CSV Data Loading and Context Preparation Function ---
+
 def load_csv_data() -> Tuple[pd.DataFrame, str, str, str, Optional[str]]:
     """
     Loads the CSV data and prepares context strings for the LLM.
@@ -40,11 +40,11 @@ def load_csv_data() -> Tuple[pd.DataFrame, str, str, str, Optional[str]]:
 
     try:
         df = pd.read_csv(CSV_FILE_NAME)
-        df_head_str = df.head(3).to_string() # First 3 rows for LLM context
+        df_head_str = df.head(3).to_string() 
         df_info_str_buffer = io.StringIO()
         df.info(buf=df_info_str_buffer)
-        df_info_str = df_info_str_buffer.getvalue() # DataFrame info for LLM context
-        column_names = ", ".join(df.columns.tolist()) # Column names for LLM context
+        df_info_str = df_info_str_buffer.getvalue() 
+        column_names = ", ".join(df.columns.tolist()) 
     except FileNotFoundError:
         error_message = f"Error: The CSV file '{CSV_FILE_NAME}' was not found."
     except Exception as e:
@@ -52,19 +52,18 @@ def load_csv_data() -> Tuple[pd.DataFrame, str, str, str, Optional[str]]:
     
     return df, df_head_str, df_info_str, column_names, error_message
 
-# Globally load data, but handle errors in main_app.py
-# This global 'df' will be used by execute_generated_code
+
+
 _df, _df_head_str, _df_info_str, _column_names, _csv_load_error = load_csv_data()
 
-# These global variables are now set by load_csv_data()
+
 df = _df
 df_head_str = _df_head_str
 df_info_str = _df_info_str
 column_names = _column_names
-csv_load_error = _csv_load_error # Expose error status
+csv_load_error = _csv_load_error 
 
 
-# --- LLM Interaction Function for Chart Generation ---
 def get_plot_code_from_llm(
     user_query: str,
     conversation_history: List[Dict],
@@ -133,10 +132,10 @@ def get_plot_code_from_llm(
     if previous_error_message:
         system_message += f"\n\n*IMPORTANT: The previous attempt to execute your generated code failed with the following error:\n\n{previous_error_message}\n\nPlease review the error and generate a corrected Python code block. Focus on fixing the exact issue.*"
     
-    # Prepare messages for the LLM, including history
+    
     messages = []
-    # Add relevant history, limiting to last few turns to manage token usage
-    for msg in conversation_history[-4:]: # Limit history to recent interactions
+    
+    for msg in conversation_history[-4:]: 
         messages.append({"role": msg["role"], "content": msg["content"]})
     
     messages.insert(0, {"role": "system", "content": system_message})
@@ -144,14 +143,14 @@ def get_plot_code_from_llm(
 
     try:
         response = client.chat.completions.create(
-            model="gpt-4-turbo", # Using gpt-4o for best performance in code generation and reasoning
+            model="gpt-4-turbo", 
             messages=messages,
-            temperature=0.1, # Keep low for deterministic code
-            max_tokens=1500 # Allow sufficient tokens for code and explanation
+            temperature=0.1, 
+            max_tokens=1500 
         )
         content = response.choices[0].message.content
-        explanation_match = re.match(r"^(.*?)\s*```python", content, re.DOTALL) # Adjusted regex
-        code_match = re.search(r"```python\n(.*?)```", content, re.DOTALL) # Adjusted regex
+        explanation_match = re.match(r"^(.*?)\s*```python", content, re.DOTALL) 
+        code_match = re.search(r"```python\n(.*?)```", content, re.DOTALL) 
 
         explanation = explanation_match.group(1).strip() if explanation_match else "No explanation provided."
         code = code_match.group(1).strip() if code_match else None
@@ -159,11 +158,11 @@ def get_plot_code_from_llm(
         if code:
             return explanation, code
         else:
-            return "No Python code block found in LLM response.", None # Return error message
+            return "No Python code block found in LLM response.", None 
 
     except openai.APIError as e:
         if "429" in str(e) or "quota" in str(e).lower():
-            # Return fallback code for quota exceeded
+            
             fallback_code = """
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -196,7 +195,7 @@ plt.clf()
     except Exception as e:
         return f"An unexpected error occurred during LLM call for chart code: {e}", None
 
-# --- Code Execution Function ---
+# Code Execution Function
 def execute_generated_code(code: str, output_filename: str = "generated_chart.png") -> Optional[str]:
     """
     Executes the generated Python code in a controlled environment.
@@ -235,12 +234,12 @@ def execute_generated_code(code: str, output_filename: str = "generated_chart.pn
         }
     }
 
-    # Conditionally add seaborn and plotly to exec_globals if used in the code
+    
     if "import seaborn as sns" in code:
         exec_globals['sns'] = sns
     if "import plotly.graph_objects as go" in code:
         exec_globals['go'] = go
-        # Plotly requires kaleido for write_image, ensure it's imported for exec
+        
         try:
             import kaleido
             exec_globals['kaleido'] = kaleido
@@ -248,30 +247,28 @@ def execute_generated_code(code: str, output_filename: str = "generated_chart.pn
             return "Plotly requires the 'kaleido' package to save images. Please install it (`pip install kaleido`)."
 
 
-    # Modify code for saving and preventing display
+    
     modified_code = code.replace("plt.savefig('generated_chart.png')", f"plt.savefig(output_filename)")
     modified_code = modified_code.replace("fig.write_image('generated_chart.png')", f"fig.write_image(output_filename)")
     modified_code = modified_code.replace("plt.show()", "# plt.show() - disabled by wrapper")
     modified_code = modified_code.replace("fig.show()", "# fig.show() - disabled by wrapper")
 
-    # Ensure plt.close() is called for matplotlib/seaborn plots
+    
     if "plt.close()" not in modified_code and ("plt." in modified_code or "sns." in modified_code):
         modified_code += "\nplt.close()"
 
     try:
         exec(modified_code, exec_globals)
-        # st.success(f"Chart saved successfully as '{output_filename}'") # Removed st.success
-        return None # Indicate success by returning None
+        
+        return None 
     except Exception as e:
         error_type = type(e).__name__
         error_message = str(e)
         full_traceback = traceback.format_exc()
-        # st.error(f"Error executing generated code: {error_type}: {error_message}") # Removed st.error
-        # st.code(f"--- Traceback ---\n{full_traceback}\n--- Generated Code ---\n{modified_code}", language="python") # Removed st.code
         return f"{error_type}: {error_message}\nFull Traceback:\n{full_traceback}" # Return error message
 
 
-# --- LLM Interaction Function for Textual Insights ---
+
 def get_insights_from_llm(
     user_query: str,
     chart_explanation: str,
@@ -307,7 +304,7 @@ def get_insights_from_llm(
     """
 
     messages = []
-    for msg in conversation_history[-4:]: # Limit history to recent interactions
+    for msg in conversation_history[-4:]: 
         messages.append({"role": msg["role"], "content": msg["content"]})
     
     messages.insert(0, {"role": "system", "content": system_message})
@@ -316,10 +313,10 @@ def get_insights_from_llm(
 
     try:
         response = client.chat.completions.create(
-            model="gpt-4-turbo", # Using gpt-4o for best performance
+            model="gpt-4-turbo", 
             messages=messages,
-            temperature=0.4, # Slightly higher temperature for more insightful text
-            max_tokens=300 # Sufficient tokens for a summary
+            temperature=0.4, 
+            max_tokens=300 
         )
         return response.choices[0].message.content.strip()
 

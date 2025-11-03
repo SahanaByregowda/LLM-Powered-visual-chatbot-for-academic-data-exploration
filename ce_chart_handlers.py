@@ -12,18 +12,22 @@ import openai
 
 
 from langchain_openai import ChatOpenAI
-from langchain.prompts import ChatPromptTemplate
-from langchain_community.vectorstores import Chroma
-from langchain_community.embeddings import HuggingFaceEmbeddings
-from langchain_core.documents import Document
+from langchain.prompts import ChatPromptTemplate 
+from langchain_community.vectorstores import Chroma 
+from langchain_community.embeddings import HuggingFaceEmbeddings 
+from langchain_core.documents import Document 
+# from langchain_community.llms import Together 
 
 from typing import Optional, List, Dict, Tuple
 
+
 from config import JSON_CE, API_KEY, MAX_RETRIES_CHART_GEN, EMBED_MODEL
 
+# Initialize OpenAI client 
 client = None
 
 def get_openai_client():
+    """initialization of OpenAI client"""
     global client
     if client is None:
         api_key = API_KEY or os.getenv("OPENAI_API_KEY")
@@ -33,7 +37,12 @@ def get_openai_client():
             print("Warning: OpenAI API key not found. Ensure it's set in your environment or config.py.")
     return client
 
+# Helper Functions
 def clean_and_parse_number(value_str):
+    """
+    Cleans and parses a string to extract a float number.
+    Handles commas as decimal separators, "??", and extracts numbers before units.
+    """
     if not isinstance(value_str, str):
         return 0.0
     value_str = value_str.strip().replace(",", ".")
@@ -49,6 +58,10 @@ def clean_and_parse_number(value_str):
         return 0.0
 
 def extract_workload(workload_str):
+    """
+    Parses a workload string to extract contact and independent study hours.
+    Returns a tuple (contact_hours, independent_study).
+    """
     contact_hours = 0.0
     independent_study = 0.0
 
@@ -65,13 +78,16 @@ def extract_workload(workload_str):
 
     return contact_hours, independent_study
 
+# Load Curriculum Data
 curriculum_data = []
 try:
     with open(JSON_CE, "r", encoding="utf-8") as f:
+       
         loaded_data = json.load(f)
         if isinstance(loaded_data, list):
             curriculum_data = loaded_data
         else:
+            
             print(f"Warning: JSON file at {JSON_CE} did not contain a top-level list. Attempting to get 'curriculum' key if it's a dict.")
             curriculum_data = loaded_data.get("curriculum", [])
             if not curriculum_data:
@@ -84,14 +100,21 @@ except json.JSONDecodeError:
 except Exception as e:
     print(f"An unexpected error occurred loading CE curriculum data: {e}")
 
+# LLM Setup (for chart generation from CE JSON) 
+# This LLM is specifically for generating Python code for charts from CE JSON
+# Using GPT-4-turbo as specified in the prompt
+
 llm_chart_gen = None
 
 def get_llm_chart_gen():
+    """Initialization of the LLM client"""
     global llm_chart_gen
     if llm_chart_gen is None:
-        llm_chart_gen = ChatOpenAI(model="gpt-3.5-turbo", temperature=0.1)
+        llm_chart_gen = ChatOpenAI(model="gpt-4-turbo", temperature=0.1)
     return llm_chart_gen
 
+# Prompt Template 
+# This prompt is specific to generating Python charts from the curriculum_data
 SYSTEM_PROMPT_CE_CHART = """
 You are a Python data analysis and visualization expert.
 
@@ -164,36 +187,46 @@ Curriculum data context (a sample of the structure, not the full data):
 ```
 """
 
+# Execute and Visualize Function
 def ask_and_generate_ce_chart_script(
     question: str,
     conversation_history: List[Dict],
     previous_error_message: Optional[str] = None
 ) -> Tuple[Optional[str], Optional[str]]:
+    """
+    Sends a prompt to the LLM to get Python code for plotting CE curriculum data.
+    Includes conversational history and previous error messages for self-correction.
+    Returns explanation and code.
+    """
     client = get_openai_client()
     if client is None:
         return "OpenAI client not initialized.", None
     if not curriculum_data:
         return "CE curriculum data not loaded. Cannot generate charts.", None
 
+    # Prepare system message with error feedback if applicable
     current_system_prompt = SYSTEM_PROMPT_CE_CHART
     if previous_error_message:
         current_system_prompt += f"\n\n*IMPORTANT: The previous attempt to execute your generated code failed with the following error:\n\n{previous_error_message}\n\nPlease review the error and generate a corrected Python code block. Focus on fixing the exact issue.*"
 
+    # Prepare messages for the LLM, including history
     messages = []
     messages.insert(0, {"role": "system", "content": current_system_prompt})
+    # Add relevant history, limiting to last few turns to manage token usage
     for msg in conversation_history[-4:]:
         messages.append({"role": msg["role"], "content": msg["content"]})
     messages.append({"role": "user", "content": question})
 
     try:
         response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model="gpt-4-turbo", 
             messages=messages,
-            temperature=0.1,
-            max_tokens=1500
+            temperature=0.1, 
+            max_tokens=1500 
         )
         content = response.choices[0].message.content
-        
+
+        # Extract explanation and code blocks
         explanation_match = re.match(r"^(.*?)\s*```python", content, re.DOTALL)
         code_match = re.search(r"```python\n(.*?)```", content, re.DOTALL)
 
@@ -238,7 +271,13 @@ def generate_chart_data(data):
     except Exception as e:
         return f"An unexpected error occurred during LLM call for CE chart code: {e}", None
 
+# Code Execution Function 
 def execute_generated_ce_chart_code(code: str, output_filename: str = "generated_ce_chart.png") -> Optional[str]:
+    """
+    Executes the generated Python code for CE curriculum charts in a controlled environment.
+    Uses the globally loaded 'curriculum_data' from this module.
+    Returns None on success, or an error message string on failure.
+    """
     if not curriculum_data:
         return "CE curriculum data is not loaded. Cannot execute chart code."
 
@@ -250,37 +289,42 @@ def execute_generated_ce_chart_code(code: str, output_filename: str = "generated
         "plt": plt,
         "clean_and_parse_number": clean_and_parse_number,
         "extract_workload": extract_workload,
-        "data": curriculum_data,
+        "data": curriculum_data, 
         "output_filename": output_filename,
-        '__builtins__': {
+        '__builtins__': { 
             'print': print, 'len': len, 'str': str, 'int': int, 'float': float,
             'dict': dict, 'list': list, 'tuple': tuple, 'set': set,
             'Exception': Exception, 'ValueError': ValueError, 'TypeError': TypeError,
             'min': min, 'max': max, 'sum': sum, 'round': round, 'abs': abs,
-            '__import__': __import__,
+            '__import__': __import__, 
         }
     }
 
+    
     if "import seaborn as sns" in code:
         exec_globals['sns'] = sns
 
+    # Modify code for saving and preventing display
     modified_code = code.replace("plt.savefig(filename)", f"plt.savefig(output_filename)")
     modified_code = modified_code.replace("plt.show()", "# plt.show() - disabled by wrapper")
-    modified_code = modified_code.replace("plt.clf()", "# plt.clf() - handled by wrapper if needed")
+    modified_code = modified_code.replace("plt.clf()", "# plt.clf() - handled by wrapper if needed") # Let wrapper manage clf
 
+    # Ensure plt.close() and plt.clf() are called for matplotlib/seaborn plots
     if "plt." in modified_code or "sns." in modified_code:
         if "plt.close()" not in modified_code:
             modified_code += "\nplt.close()"
-        if "plt.clf()" not in modified_code:
+        if "plt.clf()" not in modified_code: # Ensure clf is called to prevent plot overlap in Streamlit
             modified_code += "\nplt.clf()"
 
 
     try:
+      
         exec(modified_code, exec_globals)
 
+        
         if 'generate_chart_data' in exec_globals:
-            exec_globals['generate_chart_data'](curriculum_data)
-            return None
+            exec_globals['generate_chart_data'](curriculum_data) 
+            return None 
         else:
             return "Generated code did not define 'generate_chart_data' function."
 
@@ -290,12 +334,17 @@ def execute_generated_ce_chart_code(code: str, output_filename: str = "generated
         full_traceback = traceback.format_exc()
         return f"{error_type}: {error_message}\nFull Traceback:\n{full_traceback}\nGenerated Code:\n{modified_code}"
 
+# LLM Interaction Function for Textual Insights
 def get_ce_chart_insights_from_llm(
     user_query: str,
     chart_explanation: str,
     chart_type_description: str,
     conversation_history: List[Dict]
 ) -> str:
+    """
+    Sends a prompt to the LLM to get textual insights about the generated CE chart.
+    Includes conversational history.
+    """
     client = get_openai_client()
     if client is None:
         return "OpenAI client not initialized. Cannot generate insights."
@@ -329,16 +378,16 @@ def get_ce_chart_insights_from_llm(
 
     messages = []
     messages.insert(0, {"role": "system", "content": system_message})
-    for msg in conversation_history[-4:]:
+    for msg in conversation_history[-4:]: # Limit history to recent interactions
         messages.append({"role": msg["role"], "content": msg["content"]})
     messages.append({"role": "user", "content": "Please provide insights for the chart that was just generated."})
 
     try:
         response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model="gpt-4-turbo", 
             messages=messages,
-            temperature=0.4,
-            max_tokens=300
+            temperature=0.4, 
+            max_tokens=300 
         )
         return response.choices[0].message.content.strip()
 
